@@ -5,6 +5,8 @@ from model import HybridRumourModel
 import plotly.graph_objects as go
 from torch_geometric.data import Data
 from sentence_transformers import SentenceTransformer
+import json
+import os
 
 # Load MiniLM once
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
@@ -149,8 +151,19 @@ if st.button("Analyze"):
         # Model Comparison Chart
         st.markdown("### Model Architecture Performance")
 
-        architectures = ['GAT (Baseline)', 'GGNN (Baseline)', 'Hybrid (Ours)']
-        accuracies = [0.85, 0.88, 0.94]
+        if os.path.exists("model_metrics.json"):
+
+            with open("model_metrics.json") as f:
+                metrics = json.load(f)
+
+            architectures = list(metrics.keys())
+            accuracies = list(metrics.values())
+
+        else:
+
+            architectures = ['GAT (Baseline)', 'GGNN (Baseline)', 'Hybrid (Ours)']
+            accuracies = [0, 0, 0]
+        
         colors = ['#bdbdbd', '#bdbdbd', '#1565c0']
 
         fig_bar = go.Figure(data=[go.Bar(

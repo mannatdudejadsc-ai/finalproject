@@ -6,6 +6,75 @@ from torch_geometric.nn import (
     GATConv,
     global_mean_pool
 )
+class GATRumourModel(torch.nn.Module):
+
+    def __init__(self, num_features, hidden_dim=64, num_classes=2):
+        super().__init__()
+
+        self.lin_in = Linear(num_features, hidden_dim)
+
+        self.gat = GATConv(
+            in_channels=hidden_dim,
+            out_channels=hidden_dim,
+            heads=1,
+            concat=False
+        )
+
+        self.lin1 = Linear(hidden_dim, hidden_dim)
+        self.lin2 = Linear(hidden_dim, num_classes)
+
+    def forward(self, data):
+
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+
+        x = self.lin_in(x)
+        x = F.relu(x)
+
+        x = self.gat(x, edge_index)
+        x = F.relu(x)
+
+        x = global_mean_pool(x, batch)
+
+        x = self.lin1(x)
+        x = F.relu(x)
+
+        x = self.lin2(x)
+
+        return F.log_softmax(x, dim=1)
+        
+class GGNNRumourModel(torch.nn.Module):
+
+    def __init__(self, num_features, hidden_dim=64, num_classes=2):
+        super().__init__()
+
+        self.lin_in = Linear(num_features, hidden_dim)
+
+        self.ggnn = GatedGraphConv(
+            out_channels=hidden_dim,
+            num_layers=3
+        )
+
+        self.lin1 = Linear(hidden_dim, hidden_dim)
+        self.lin2 = Linear(hidden_dim, num_classes)
+
+    def forward(self, data):
+
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+
+        x = self.lin_in(x)
+        x = F.relu(x)
+
+        x = self.ggnn(x, edge_index)
+        x = F.relu(x)
+
+        x = global_mean_pool(x, batch)
+
+        x = self.lin1(x)
+        x = F.relu(x)
+
+        x = self.lin2(x)
+
+        return F.log_softmax(x, dim=1)
 
 class HybridRumourModel(torch.nn.Module):
     def __init__(self, num_features, hidden_dim=64, num_classes=2):

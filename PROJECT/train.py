@@ -1,7 +1,50 @@
 import torch
-from model import HybridRumourModel
+from model import HybridRumourModel, GATRumourModel, GGNNRumourModel
 from data_loader import get_data_loaders
 import torch.nn.functional as F
+
+def train_model(model, train_loader, test_loader, device, epochs=20, lr=0.01):
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    model.train()
+
+    for epoch in range(epochs):
+
+        for data in train_loader:
+
+            data = data.to(device)
+
+            optimizer.zero_grad()
+
+            out = model(data)
+
+            loss = F.nll_loss(out, data.y)
+
+            loss.backward()
+
+            optimizer.step()
+
+    model.eval()
+
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+
+        for data in test_loader:
+
+            data = data.to(device)
+
+            out = model(data)
+
+            pred = out.argmax(dim=1)
+
+            correct += int((pred == data.y).sum())
+
+            total += len(data.y)
+
+    return correct / total
 
 def train():
     # Hyperparameters
@@ -19,50 +62,31 @@ def train():
     train_loader, test_loader = get_data_loaders(batch_size=batch_size)
 
     # Model
-    model = HybridRumourModel(num_features=num_features, hidden_dim=hidden_dim).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    gat_model = GATRumourModel(num_features).to(device)
+    ggnn_model = GGNNRumourModel(num_features).to(device)
+    hybrid_model = HybridRumourModel(num_features).to(device)
 
-    model.train()
-    for epoch in range(epochs):
-        total_loss = 0
-        correct = 0
-        total_samples = 0
-        
-        for data in train_loader:
-            data = data.to(device)
-            optimizer.zero_grad()
-            
-            out = model(data)
-            loss = F.nll_loss(out, data.y)
-            loss.backward()
-            optimizer.step()
-            
-            total_loss += loss.item()
-            pred = out.argmax(dim=1)
-            correct += int((pred == data.y).sum())
-            total_samples += len(data.y)
+    print("Training GAT baseline...")
+    gat_acc = train_model(gat_model, train_loader, test_loader, device)
 
-        train_acc = correct / total_samples
-        print(f"Epoch {epoch+1:03d}: Loss: {total_loss:.4f}, Train Acc: {train_acc:.4f}")
+    print("Training GGNN baseline...")
+    ggnn_acc = train_model(ggnn_model, train_loader, test_loader, device)
 
-    # Evaluation
-    model.eval()
-    correct = 0
-    total_samples = 0
-    with torch.no_grad():
-        for data in test_loader:
-            data = data.to(device)
-            out = model(data)
-            pred = out.argmax(dim=1)
-            correct += int((pred == data.y).sum())
-            total_samples += len(data.y)
-    
-    test_acc = correct / total_samples
-    print(f"Test Accuracy: {test_acc:.4f}")
-    
-    # Save the model
-    torch.save(model.state_dict(), "hybrid_rumour_model.pth")
-    print("Model saved to hybrid_rumour_model.pth")
+    print("Training Hybrid model...")
+    hybrid_acc = train_model(hybrid_model, train_loader, test_loader, device)   
+
+    import json
+
+    results = {
+        "GAT (Baseline)": gat_acc,
+        "GGNN (Baseline)": ggnn_acc,
+        "Hybrid (Ours)": hybrid_acc
+    }
+
+    with open("model_metrics.json", "w") as f:
+        json.dump(results, f)
+
+    print("Model comparison saved to model_metrics.json")
 
 if __name__ == "__main__":
     train()
