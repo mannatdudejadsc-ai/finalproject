@@ -85,7 +85,12 @@ input_text = st.text_area(
     placeholder="Type the content here to analyze..."
 )
 
-# Analyze Button
+replies_input = st.text_area(
+    "Enter Replies (one per line)",
+    height=100,
+    placeholder="Reply 1\nReply 2\nReply 3..."
+)
+
 if st.button("Analyze"):
 
     if not input_text.strip():
@@ -96,13 +101,23 @@ if st.button("Analyze"):
         with st.spinner("Analyzing propagation patterns..."):
 
             # Convert text → MiniLM embedding
-            embedding = embedder.encode(input_text)
+            # REPLACE WITH THESE
+            all_texts = [input_text.strip()]
+            if replies_input.strip():
+                reply_list = [r.strip() for r in replies_input.strip().split("\n") if r.strip()]
+                all_texts.extend(reply_list)
 
-            x = torch.tensor(embedding, dtype=torch.float).unsqueeze(0).to(device)
+            embeddings = embedder.encode(all_texts)   
+            x = torch.tensor(embeddings, dtype=torch.float).to(device)
 
-            edge_index = torch.empty((2, 0), dtype=torch.long).to(device)
+            if len(all_texts) > 1:
+                src_nodes  = [0] * (len(all_texts) - 1)
+                tgt_nodes  = list(range(1, len(all_texts)))
+                edge_index = torch.tensor([src_nodes, tgt_nodes], dtype=torch.long).to(device)
+            else:
+                edge_index = torch.empty((2, 0), dtype=torch.long).to(device)
 
-            batch = torch.tensor([0]).to(device)
+            batch = torch.zeros(len(all_texts), dtype=torch.long).to(device)
 
             data = Data(x=x, edge_index=edge_index, batch=batch)
 
@@ -182,3 +197,42 @@ if st.button("Analyze"):
         )
 
         st.plotly_chart(fig_bar, use_container_width=True)
+        if len(all_texts) > 1:
+            import math
+            st.markdown("### 🌳 Propagation Tree")
+            n = len(all_texts)
+            node_x = [0.5]
+            node_y = [0.5]
+            for i in range(1, n):
+                angle = 2 * math.pi * i / (n - 1)
+                node_x.append(0.5 + 0.35 * math.cos(angle))
+                node_y.append(0.5 + 0.35 * math.sin(angle))
+            node_labels = [f"Source: {all_texts[0][:30]}..."] + \
+                          [f"Reply {i}: {t[:25]}..." for i, t in enumerate(all_texts[1:], 1)]
+            edge_x, edge_y = [], []
+            for i in range(1, n):
+                edge_x += [node_x[0], node_x[i], None]
+                edge_y += [node_y[0], node_y[i], None]
+            fig_tree = go.Figure()
+            fig_tree.add_trace(go.Scatter(
+                x=edge_x, y=edge_y,
+                mode='lines',
+                line=dict(color='#9fa8da', width=1.5)
+            ))
+            fig_tree.add_trace(go.Scatter(
+                x=node_x, y=node_y,
+                mode='markers+text',
+                marker=dict(size=[20] + [12] * (n - 1),
+                        color=['#1565c0'] + ['#42a5f5'] * (n - 1)),
+                text=node_labels,
+                textposition="top center"
+            ))
+            fig_tree.update_layout(
+                height=400,
+                showlegend=False,
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)'
+            )
+            st.plotly_chart(fig_tree, use_container_width=True)
