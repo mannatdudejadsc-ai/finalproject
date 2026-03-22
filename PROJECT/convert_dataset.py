@@ -54,3 +54,14 @@ df.to_csv("dataset/rumours.csv", index=False)
 
 print("Dataset created: dataset/rumours.csv")
 print("Total samples:", len(df))
+
+import sys
+if "--pheme" in sys.argv:
+    from data_loader import download_pheme_if_needed
+    import os
+    # force re-download by removing old CSV if it exists
+    if os.path.exists("dataset/rumours.csv"):
+        os.remove("dataset/rumours.csv")
+        print("Removed old dataset/rumours.csv")
+    download_pheme_if_needed()
+    print("Done. Run python train.py to train on PHEME-9.")
