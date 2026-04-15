@@ -1,34 +1,33 @@
 import torch
 from model import HybridRumourModel
-from data_loader import RumourDataset
-import torch.nn.functional as F
-import random
+from sentence_transformers import SentenceTransformer
+from torch_geometric.data import Data
+
+# Load embedder
+embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
 def predict(text_input="Sample rumour text"):
-    # Note: In a real system, 'text_input' would be converted to a graph structure + embeddings
-    # Here we simulate this by generating a random graph using our mock data loader
-    
     print(f"Analyzing input: '{text_input}'")
-    print("Generating graph structure from input...")
-    
-    # Generate 1 mock graph
-    # We use our dataset class to generate it consistent with training data
-    dataset = RumourDataset(num_graphs=1, num_features=128)
-    data = dataset[0]
     
     # Load Model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = HybridRumourModel(num_features=128, hidden_dim=64).to(device)
+    model = HybridRumourModel(num_features=384, hidden_dim=64).to(device)
     
     try:
         model.load_state_dict(torch.load("hybrid_rumour_model.pth", map_location=device))
-        print("Model loaded successfully.")
     except FileNotFoundError:
         print("Error: Model file 'hybrid_rumour_model.pth' not found. Please run train.py first.")
         return
-
+        
     model.eval()
-    data = data.to(device)
+    
+    # Preprocess text into graph format
+    embeddings = embedder.encode([text_input.strip()])
+    x = torch.tensor(embeddings, dtype=torch.float).to(device)
+    edge_index = torch.empty((2, 0), dtype=torch.long).to(device)
+    batch = torch.zeros(1, dtype=torch.long).to(device)
+    
+    data = Data(x=x, edge_index=edge_index, batch=batch)
     
     with torch.no_grad():
         out = model(data)

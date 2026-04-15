@@ -1,6 +1,11 @@
 import torch
 import pandas as pd
 import numpy as np
+import os
+import io
+import json
+import zipfile
+import requests
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
 from sentence_transformers import SentenceTransformer
@@ -122,7 +127,8 @@ class RumourDataset(Dataset):
                 child = row["tweet_id"]
 
                 if parent in node_map and parent != child:
-                    edges.append([node_map[parent], node_map[child]])
+                    edges.append([node_map[parent], node_map[child]]) # Downward edge
+                    edges.append([node_map[child], node_map[parent]]) # Upward edge
 
         # convert node features
             x = torch.stack(node_features)

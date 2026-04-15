@@ -113,7 +113,15 @@ if st.button("Analyze"):
             if len(all_texts) > 1:
                 src_nodes  = [0] * (len(all_texts) - 1)
                 tgt_nodes  = list(range(1, len(all_texts)))
-                edge_index = torch.tensor([src_nodes, tgt_nodes], dtype=torch.long).to(device)
+                
+                # Make the graph bidirectional
+                edges_from_source = [src_nodes, tgt_nodes]
+                edges_to_source = [tgt_nodes, src_nodes]
+                
+                combined_src = edges_from_source[0] + edges_to_source[0]
+                combined_tgt = edges_from_source[1] + edges_to_source[1]
+                
+                edge_index = torch.tensor([combined_src, combined_tgt], dtype=torch.long).to(device)
             else:
                 edge_index = torch.empty((2, 0), dtype=torch.long).to(device)
 
