@@ -51,8 +51,8 @@ def train():
     num_features = 384
     hidden_dim = 64
     batch_size = 16
-    lr = 0.01
-    epochs = 20
+    lr = 0.001
+    epochs = 50
 
     # Device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
