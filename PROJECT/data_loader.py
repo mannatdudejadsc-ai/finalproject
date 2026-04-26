@@ -9,6 +9,7 @@ import requests
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
 from sentence_transformers import SentenceTransformer
+import math
 
 # Load MiniLM model (384 dimensional embeddings)
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
@@ -62,6 +63,10 @@ def download_pheme_if_needed():
         tweet_id = str(data.get("id_str", parts[-1].replace(".json", "")))
         text     = data.get("text", "")
 
+        is_verified = 1 if data.get("user", {}).get("verified", False) else 0
+        followers = data.get("user", {}).get("followers_count", 0)
+        retweets = data.get("retweet_count", 0)
+
         if folder in ("source-tweets", "source-tweet"):
             parent_id = tweet_id          # root node points to itself
         elif folder == "reactions":
@@ -78,7 +83,10 @@ def download_pheme_if_needed():
             "text":      text,
             "label":     label,
             "event":     event,
-            "is_source": 1 if folder in ("source-tweets", "source-tweet") else 0
+            "is_source": 1 if folder in ("source-tweets", "source-tweet") else 0,
+            "verified":  is_verified,
+            "followers": followers,
+            "retweets":  retweets
         })
 
     os.makedirs("dataset", exist_ok=True)
@@ -118,7 +126,19 @@ class RumourDataset(Dataset):
         # create nodes
             for i, (_, row) in enumerate(group.iterrows()):
                 node_map[row["tweet_id"]] = i
-                node_features.append(self.text_embedding(row["text"]))
+                text_emb = self.text_embedding(row["text"])
+                
+                # Create 3D metadata tensor (log scale for big numbers)
+                meta_features = torch.tensor([
+                    row.get("verified", 0),
+                    math.log1p(row.get("followers", 0)), 
+                    math.log1p(row.get("retweets", 0))
+                ], dtype=torch.float)
+                
+                # Combine them into a 387D tensor
+                combined_feature = torch.cat([text_emb, meta_features])
+                
+                node_features.append(combined_feature)
 
         # create edges
             for _, row in group.iterrows():
