@@ -8,10 +8,11 @@ import zipfile
 import tarfile
 import tempfile
 import requests
+import math
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
 from sentence_transformers import SentenceTransformer
-import math
+
 
 # Load MiniLM model (384 dimensional embeddings)
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
@@ -53,7 +54,7 @@ def download_pheme_if_needed():
     print("[PHEME] Extracting and parsing files...")
     rows = []
     try:
-        with tarfile.open(tmp_path, "r:bz2") as tar:
+        with tarfile.open(tmp_path, "r:*") as tar:
             for member in tar.getmembers():
                 if not member.isfile() or not member.name.endswith(".json"):
                     continue
