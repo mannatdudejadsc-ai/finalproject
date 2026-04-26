@@ -5,6 +5,8 @@ import os
 import io
 import json
 import zipfile
+import tarfile
+import tempfile
 import requests
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
@@ -31,63 +33,89 @@ def download_pheme_if_needed():
     resp.raise_for_status()
     files = resp.json()
 
-    zip_files = [f for f in files if f["name"].endswith(".zip")]
-    main_file = max(zip_files, key=lambda f: f["size"])
+    # The dataset is actually in a .tar.bz2 file
+    tar_files = [f for f in files if f["name"].endswith(".tar.bz2")]
+    if not tar_files:
+        raise ValueError("Could not find .tar.bz2 dataset on Figshare.")
+        
+    main_file = max(tar_files, key=lambda f: f["size"])
     print(f"[PHEME] Downloading {main_file['name']} "
           f"({main_file['size'] // 1024 // 1024} MB)...")
 
-    resp = requests.get(main_file["download_url"], timeout=300)
+    resp = requests.get(main_file["download_url"], stream=True, timeout=300)
     resp.raise_for_status()
-    z = zipfile.ZipFile(io.BytesIO(resp.content))
+    
+    with tempfile.NamedTemporaryFile(suffix=".tar.bz2", delete=False) as tmp:
+        for chunk in resp.iter_content(chunk_size=8192):
+            tmp.write(chunk)
+        tmp_path = tmp.name
 
+    print("[PHEME] Extracting and parsing files...")
     rows = []
-    for name in z.namelist():
-        parts = name.strip("/").split("/")
-        # Expected: event/rumours|non-rumours/thread_id/source-tweets/id.json
-        #       or: event/rumours|non-rumours/thread_id/reactions/id.json
-        if len(parts) < 5 or not parts[-1].endswith(".json"):
-            continue
+    try:
+        with tarfile.open(tmp_path, "r:bz2") as tar:
+            for member in tar.getmembers():
+                if not member.isfile() or not member.name.endswith(".json"):
+                    continue
 
-        event     = parts[0]
-        label_str = parts[1]   # 'rumours' or 'non-rumours'
-        thread_id = parts[2]
-        folder    = parts[3]   # 'source-tweets' or 'reactions'
-        label     = 0 if label_str == "non-rumours" else 1
+                parts = member.name.strip("/").split("/")
+                
+                try:
+                    if "rumours" in parts:
+                        idx = parts.index("rumours")
+                    else:
+                        idx = parts.index("non-rumours")
+                except ValueError:
+                    continue
+                
+                if idx < 1 or len(parts) - idx < 3:
+                    continue
 
-        with z.open(name) as f:
-            try:
-                data = json.load(f)
-            except Exception:
-                continue
+                event     = parts[idx-1]
+                label_str = parts[idx]   # 'rumours' or 'non-rumours'
+                thread_id = parts[idx+1]
+                folder    = parts[idx+2]   # 'source-tweets' or 'reactions'
+                label     = 0 if label_str == "non-rumours" else 1
 
-        tweet_id = str(data.get("id_str", parts[-1].replace(".json", "")))
-        text     = data.get("text", "")
+                f = tar.extractfile(member)
+                if f is None:
+                    continue
+                try:
+                    data = json.load(f)
+                except Exception:
+                    continue
 
-        is_verified = 1 if data.get("user", {}).get("verified", False) else 0
-        followers = data.get("user", {}).get("followers_count", 0)
-        retweets = data.get("retweet_count", 0)
+                tweet_id = str(data.get("id_str", parts[-1].replace(".json", "")))
+                text     = data.get("text", "")
 
-        if folder in ("source-tweets", "source-tweet"):
-            parent_id = tweet_id          # root node points to itself
-        elif folder == "reactions":
-            parent_id = str(
-                data.get("in_reply_to_status_id_str") or thread_id
-            )
-        else:
-            continue
+                is_verified = 1 if data.get("user", {}).get("verified", False) else 0
+                followers = data.get("user", {}).get("followers_count", 0)
+                retweets = data.get("retweet_count", 0)
 
-        rows.append({
-            "thread_id": thread_id,
-            "tweet_id":  tweet_id,
-            "parent_id": parent_id,
-            "text":      text,
-            "label":     label,
-            "event":     event,
-            "is_source": 1 if folder in ("source-tweets", "source-tweet") else 0,
-            "verified":  is_verified,
-            "followers": followers,
-            "retweets":  retweets
-        })
+                if folder in ("source-tweets", "source-tweet"):
+                    parent_id = tweet_id          # root node points to itself
+                elif folder == "reactions":
+                    parent_id = str(
+                        data.get("in_reply_to_status_id_str") or thread_id
+                    )
+                else:
+                    continue
+
+                rows.append({
+                    "thread_id": thread_id,
+                    "tweet_id":  tweet_id,
+                    "parent_id": parent_id,
+                    "text":      text,
+                    "label":     label,
+                    "event":     event,
+                    "is_source": 1 if folder in ("source-tweets", "source-tweet") else 0,
+                    "verified":  is_verified,
+                    "followers": followers,
+                    "retweets":  retweets
+                })
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
     os.makedirs("dataset", exist_ok=True)
     df = pd.DataFrame(rows)
