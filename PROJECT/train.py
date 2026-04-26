@@ -48,7 +48,7 @@ def train_model(model, train_loader, test_loader, device, epochs=20, lr=0.01):
 
 def train():
     # Hyperparameters
-    num_features = 384
+    num_features = 387
     hidden_dim = 64
     batch_size = 16
     lr = 0.001
